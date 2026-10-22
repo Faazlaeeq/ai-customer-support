@@ -1,0 +1,7 @@
+{
+    "python.defaultInterpreterPath": "C:\\Users\\Ayaan\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+    "python.terminal.activateEnvironment": false,
+    "python.analysis.extraPaths": [
+        "C:\\Users\\Ayaan\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages"
+    ]
+}
