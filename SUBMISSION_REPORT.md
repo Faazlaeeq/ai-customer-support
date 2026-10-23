@@ -143,16 +143,16 @@ All six required test scenarios were executed end-to-end and verified against th
 
 ---
 
-## 4. Written Reflection
+## 4. Written Reflection (Design Decisions & Production Considerations)
 
-### Design Decision
-A key architectural decision was separating the **agent-facing tool name** from the **underlying MCP wire name** when registering tools dynamically from the AgentCore Gateway. The Bedrock Converse API enforces a strict regular expression constraint on tool names (`[a-zA-Z0-9_-]+`), rejecting spaces or special characters. To maintain compatibility without breaking the remote Gateway server's JSON-RPC dispatch, I updated `main.py` so that `t._agent_tool_name` is sanitized using regex substitution (`re.sub(r"[^a-zA-Z0-9_-]", "_", ...)`), while `t.mcp_tool.name` retains the exact wire string expected by the remote MCP Gateway target.
+### Design Decision & Tool Selection
+In building the Customer Support AI Agent, an essential architectural decision was integrating the **Amazon Bedrock AgentCore Code Interpreter** (`code_session`) for loyalty discount calculations rather than relying on direct LLM arithmetic. Large language models frequently suffer from calculation drift and rounding errors when evaluating multi-tiered business logic involving tiered percentages, floor-based point redemption (500-point increments), and order value caps. By executing calculation logic in an isolated, deterministic Python sandbox, the agent guarantees 100% mathematical precision and transparency for customer billing calculations while falling back gracefully to static tier discounts if the sandbox is unreachable.
 
-### Challenge & Solution
-One challenge encountered during implementation was handling dynamic template variables in memory strategy namespaces. The AgentCore Memory service returned namespace templates containing `{memoryStrategyId}` and `{actorId}` (e.g., `/strategies/{memoryStrategyId}/actors/{actorId}/`). Calling `str.format(actorId=self.actor_id)` directly raised a `KeyError: 'memoryStrategyId'`. I solved this by extending `get_namespaces()` to extract `memoryStrategyId` from each strategy definition dictionary returned by `mem_client.get_memory_strategies()`, pre-populating `{memoryStrategyId}` before returning the template map to `MemoryHook`.
+### Challenge Encountered & Resolution
+A concrete challenge arose when dynamically registering external tools from the **AgentCore Gateway** over Model Context Protocol (MCP). The AWS Bedrock Converse API enforces a strict regular expression pattern (`^[a-zA-Z0-9_-]+$`) on all registered tool names. Several dynamically generated tool identifiers from the Gateway and API Gateway targets included invalid characters and spaces, triggering schema validation rejections during agent invocation. To resolve this without breaking remote JSON-RPC routing, I modified the registration pipeline in `main.py` to decouple the agent-facing tool name from the underlying MCP wire name. I applied regex sanitization (`re.sub(r"[^a-zA-Z0-9_-]", "_", ...)`) to `_agent_tool_name` for Bedrock compatibility while keeping `mcp_tool.name` untouched so the Gateway could correctly route tool execution requests to the underlying `order-tracker` and `refund-processor` Lambda functions.
 
-### Production Extensions
-To transition this agent to a production enterprise environment, I would:
-1. **Secure the Gateway with Authentication**: Upgrade the AgentCore Gateway from `NONE` authorizer to OAuth2 / IAM JWT authorization to ensure all tool invocations are authenticated.
-2. **Replace Mock Databases**: Connect the `order-tracker` and `refund-processor` Lambda functions to persistent storage such as Amazon DynamoDB with transactional locks.
-3. **Observability & Guardrails**: Add Amazon Bedrock Guardrails for PII redaction/content filtering and enable AWS X-Ray tracing across the AgentCore runtime and Lambda execution calls.
+### Production Considerations: Security, Scalability & Cost
+Transitioning this agent to an enterprise production environment introduces several vital operational requirements:
+1. **Security & Governance**: The development AgentCore Gateway authorizer should be upgraded from `NONE` to OAuth2/IAM SigV4 token-based authentication. Additionally, Amazon Bedrock Guardrails should be configured to redact sensitive Personally Identifiable Information (PII) such as credit card details and enforce content moderation.
+2. **Scalability & Persistence**: In-memory mock data within the Lambda functions must be replaced with Amazon DynamoDB using strong consistency and transaction locks to handle concurrent customer orders and refunds safely.
+3. **Cost & Observability**: Cost is optimized by deploying the lightweight Amazon Nova Lite model and implementing semantic response caching to minimize redundant LLM calls. Real-time observability requires CloudWatch metric alarms for runtime error spikes and AWS X-Ray distributed tracing across AgentCore and downstream services.
